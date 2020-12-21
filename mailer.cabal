@@ -17,7 +17,8 @@ extra-source-files:  CHANGELOG.md, README.md
 
 executable mailer
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       Mail
+
   -- other-extensions:
   build-depends:       base                 ^>= 4.14.1.0
                      , bytestring           ^>= 0.10.10.0

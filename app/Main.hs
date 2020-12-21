@@ -15,10 +15,10 @@ import           Data.Text.Lazy (toStrict, fromStrict)
 import qualified Data.Text.Read as Read
 import           Data.Text.Template (Template, Context)
 import qualified Data.Text.Template as Template
-import           Mail (parseEmacsMail)
+import           Mail (parseEmacsMail, EmacsMail(..))
 import           Network.Mail.Mime
-import qualified Options.Applicative as OptParse
-import           Options.Applicative hiding (Parser)
+import qualified Options.Applicative
+import           Options.Applicative
 import           Text.Parsec(parse)
 
 --------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ data Options = Options { templatePath :: FilePath
                        } deriving (Show,Eq)
 
 
-optionsParser :: OptParse.Parser Options
+optionsParser :: Parser Options
 optionsParser = Options <$> strOption (  long "template"
                                       <> metavar "TEMPLATE"
                                       <> help "path to the template file"
@@ -101,11 +101,19 @@ loadData fp = ByteString.readFile fp >>= \bs ->
 --
 
 -- | Renders an email with attachments
-renderEmail     :: Template -> Row -> IO EmacsMail
-renderEmail t r = pure $ renderPureEmail t r
+renderEmail     :: Template -> Row -> IO Mail
+renderEmail t r = let EmacsMail m ats = renderPureEmail t r
+                  in addAttachments ats m
 
 -- | Renders an email without attachments
 renderPureEmail     :: Template -> Row -> EmacsMail
 renderPureEmail t r = case parse parseEmacsMail "template" (render t r) of
                         Left err -> error $ show err
                         Right m  -> m
+
+storeEmail       :: FilePath -> Mail -> IO ()
+storeEmail dir m = let fp = toFP dir . head . mailTo $ m
+                   in renderMail' m >>= ByteString.writeFile fp
+
+toFP         :: FilePath -> Address -> FilePath
+toFP dir adr = dir <> "/" <> Text.unpack (addressEmail adr) <> ".txt"
