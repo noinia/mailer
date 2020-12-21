@@ -29,6 +29,7 @@ executable mailer
                      , template             ^>= 0.2
                      , text                 ^>= 1.2
                      , parsec               ^>= 3.1
+                     , typed-process        ^>= 0.2
 
   hs-source-dirs:      app
   default-language:    Haskell2010

@@ -72,7 +72,7 @@ parseField = Text.toLower . Text.pack <$> many1 alphaNum
 
 
 parseValue :: Parser Text
-parseValue = Text.pack <$> many1 (noneOf "\n\r")
+parseValue = (Text.strip . Text.pack) <$> many1 (noneOf "\n\r")
 
 
 

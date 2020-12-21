@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import           Control.Arrow (first, second)
+import           Control.Monad ((<=<), when)
 import qualified Data.ByteString.Lazy as ByteString
 import qualified Data.Csv as Csv
 import           Data.Foldable (toList)
+import           Data.Function ((&))
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.String (fromString)
@@ -19,7 +22,10 @@ import           Mail (parseEmacsMail, EmacsMail(..))
 import           Network.Mail.Mime
 import qualified Options.Applicative
 import           Options.Applicative
-import           Text.Parsec(parse)
+import           System.Process.Typed
+import qualified System.Process.Typed as Process
+import           Text.Parsec (parse)
+
 
 --------------------------------------------------------------------------------
 
@@ -61,7 +67,29 @@ mainWith      :: Options -> IO ()
 mainWith opts = do t        <- loadTemplate $ templatePath opts
                    (hdr,rs) <- loadData $ dataPath opts
                    mails    <- mapM (renderEmail t) rs
-                   mapM_ print mails
+                   runStoreAction mails (store opts)
+                   runSendAction  mails (send  opts)
+
+runStoreAction       :: [Mail] -> Maybe FilePath -> IO ()
+runStoreAction mails = \case
+  Nothing  -> pure ()
+  Just dir -> mapM_ (storeEmail dir) mails
+
+runSendAction                  :: [Mail] -> Bool ->  IO ()
+runSendAction mails shouldSend = when shouldSend (mapM_ sendEmail mails)
+
+-- | runs
+sendEmail   :: Mail -> IO ()
+sendEmail m = renderMail' m >>= sendEmail' m
+
+sendEmail'      :: Mail -> ByteString.ByteString -> IO ()
+sendEmail' m bs = do withProcessWait processCfg $ \msmtpProc ->
+                       pure ()
+  where
+    processCfg = Process.proc "msmtp" [ "--read-recipients"
+                                      , "--read-envelope-from"
+                                      ]
+               & setStdin (byteStringInput $ bs)
 
 --------------------------------------------------------------------------------
 -- * Rendering a Text Template
@@ -116,4 +144,6 @@ storeEmail dir m = let fp = toFP dir . head . mailTo $ m
                    in renderMail' m >>= ByteString.writeFile fp
 
 toFP         :: FilePath -> Address -> FilePath
-toFP dir adr = dir <> "/" <> Text.unpack (addressEmail adr) <> ".txt"
+toFP dir adr = dir <> "/" <> f (addressEmail adr) <> ".txt"
+  where
+    f = Text.unpack . Text.replace " " "_" . Text.strip
