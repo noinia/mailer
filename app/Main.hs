@@ -2,25 +2,22 @@
 {-# LANGUAGE LambdaCase #-}
 module Main where
 
-import           Control.Arrow (first, second)
-import           Control.Monad ((<=<), when)
+
+import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as ByteString
 import qualified Data.Csv as Csv
 import           Data.Foldable (toList)
 import           Data.Function ((&))
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
-import           Data.String (fromString)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
-import           Data.Text.Lazy (toStrict, fromStrict)
-import qualified Data.Text.Read as Read
+import           Data.Text.Lazy (toStrict)
 import           Data.Text.Template (Template, Context)
 import qualified Data.Text.Template as Template
 import           Mail (parseEmacsMail, EmacsMail(..))
 import           Network.Mail.Mime
-import qualified Options.Applicative
 import           Options.Applicative
 import           System.Process.Typed
 import qualified System.Process.Typed as Process

@@ -1,7 +1,4 @@
 cradle:
   cabal:
-    - path: "app/Main.hs"
-      component: "mailer:exe:mailer"
-
-    - path: "app/Mail.hs"
-      component: "mailer:exe:mailer"
+    - component: "mailer:exe:mailer"
+      path: "app"
