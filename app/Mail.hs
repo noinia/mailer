@@ -127,16 +127,19 @@ parseAttachment = (,) <$  string "<#part "
                       <*  string ">\n<#/part>"
 
 parseKeyVal      :: String -> Parser a -> Parser (String,a)
-parseKeyVal k pv = (,) <$> string k <* char '=' <*> pv
+parseKeyVal k pv = (,) <$> string k <* char '=' <*> pv'
+  where
+    pv' = between (char '"') (char '"') pv <|> pv
+
 
 parseType :: Parser ContentTypeString
-parseType = snd <$> parseKeyVal "type" (Text.pack <$> many1 (noneOf " "))
+parseType = snd <$> parseKeyVal "type" (Text.pack <$> many1 (noneOf " \""))
 
 parsePath  :: Parser FilePath
-parsePath  = snd <$> parseKeyVal "filename" (many1 (noneOf " "))
+parsePath  = snd <$> parseKeyVal "filename" (many1 (noneOf "\""))
 
 parseDisposition :: Parser String
 parseDisposition = snd <$> parseKeyVal "disposition" (string "attachment" <|> string "inline")
 
 
-test2 = parse parseAttachment "foo" "<#part type=\"application/pdf\" filename=\"/home/frank/rondetijden.pdf\" disposition=attachment>\n<#/part>"
+test2 = parse parseAttachment "foo" "<#part type=\"application/pdf\" filename=\"/home/frank/rondetijd en.pdf\" disposition=attachment>\n<#/part>"
