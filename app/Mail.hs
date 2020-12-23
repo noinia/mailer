@@ -128,7 +128,7 @@ parseBodyText = Text.pack <$> manyTill anyChar parseAttachmentStart
 -- test = parseOnly parseBody
 --   <$> Text.readFile "/home/frank/teaching/2019/geometric_algorithms/template_final_mail.txt"
 test = parseOnly parseBody
-  <$> Text.readFile "/tmp/body.txt"
+  <$> Text.readFile "/home/frank/teaching/geometric_algorithms/hw2mail.org"
 
 parseAttachmentStart :: Parser Text
 parseAttachmentStart = string "<#part "
