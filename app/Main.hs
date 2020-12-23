@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 module Main where
 
 
@@ -21,18 +22,16 @@ import           Network.Mail.Mime
 import           Options.Applicative
 import           System.Process.Typed
 import qualified System.Process.Typed as Process
-import           Text.Parsec (parse)
+import           Data.Attoparsec.Text(parseOnly)
 
 
 --------------------------------------------------------------------------------
-
-
--- data OutputOption = Send | Store FilePath deriving (Show,Eq,Read,Ord)
 
 data Options = Options { templatePath :: FilePath
                        , dataPath     :: FilePath
                        , send         :: Bool
                        , store        :: Maybe FilePath
+                       , dump         :: Maybe FilePath
                        } deriving (Show,Eq)
 
 
@@ -50,7 +49,11 @@ optionsParser = Options <$> strOption (  long "template"
                                             )
                         <*> optional (strOption (long "store"
                                                <> metavar "OUTPUTDIR"
-                                               <> help "directory in which to store the messages"
+                                               <> help "directory in which to store the messages (as text)"
+                                      ))
+                        <*> optional (strOption (long "dump"
+                                               <> metavar "DUMPDIR"
+                                               <> help "directory in which to store the messages (in mime format)"
                                       ))
 
 --------------------------------------------------------------------------------
@@ -62,31 +65,46 @@ main = mainWith =<< execParser opts
 
 mainWith      :: Options -> IO ()
 mainWith opts = do t        <- loadTemplate $ templatePath opts
-                   (hdr,rs) <- loadData $ dataPath opts
+                   (_,rs)   <- loadData $ dataPath opts
                    mails    <- mapM (renderEmail t) rs
-                   runStoreAction mails (store opts)
-                   runSendAction  mails (send  opts)
+                   mapM_ (runAction opts) mails
 
-runStoreAction       :: [Mail] -> Maybe FilePath -> IO ()
-runStoreAction mails = \case
+
+runAction        :: Options -> (Text,Mail) -> IO ()
+runAction opts m = mapM_ (\f -> f m) [ runDump  $ dump opts
+                                     , runStore $ store opts
+                                     , runSend  $ send opts
+                                     ]
+
+runStore       :: Maybe FilePath -> (Text,Mail) -> IO ()
+runStore mfp m = case mfp of
   Nothing  -> pure ()
-  Just dir -> mapM_ (storeEmail dir) mails
+  Just dir -> storeEmail dir m
 
-runSendAction                  :: [Mail] -> Bool ->  IO ()
-runSendAction mails shouldSend = when shouldSend (mapM_ sendEmail mails)
+----------------------------------------
+
+runDump              :: Maybe FilePath -> (Text, Mail) -> IO ()
+runDump mfp (_,mail) = case mfp of
+  Nothing  -> pure ()
+  Just dir -> dumpEmail dir mail
+
+----------------------------------------
+
+runSend                     :: Bool ->  (Text,Mail) -> IO ()
+runSend shouldSend (_,mail) = when shouldSend (sendEmail mail)
 
 -- | runs
 sendEmail   :: Mail -> IO ()
 sendEmail m = renderMail' m >>= sendEmail' m
 
-sendEmail'      :: Mail -> ByteString.ByteString -> IO ()
-sendEmail' m bs = do withProcessWait processCfg $ \msmtpProc ->
-                       pure ()
+sendEmail'       :: Mail -> ByteString.ByteString -> IO ()
+sendEmail' _m bs = do withProcessWait processCfg $ \_msmtpProc ->
+                        pure ()
   where
     processCfg = Process.proc "msmtp" [ "--read-recipients"
                                       , "--read-envelope-from"
                                       ]
-               & setStdin (byteStringInput $ bs)
+               & setStdin (byteStringInput bs)
 
 --------------------------------------------------------------------------------
 -- * Rendering a Text Template
@@ -100,8 +118,9 @@ render   :: Template -> Row -> Text
 render t = toStrict . Template.render t . context
 
 -- | Create 'Context' from a Map
+{-# HLint ignore context #-}
 context   :: Row -> Context
-context r = \k -> let err = error $ "Could not find key: " ++ Text.unpack k
+context r = \k -> let err = error $ "Could not find key: " <> Text.unpack k
                   in fromMaybe err $ Map.lookup k r
 
 --------------------------------------------------------------------------------
@@ -126,21 +145,31 @@ loadData fp = ByteString.readFile fp >>= \bs ->
 --
 
 -- | Renders an email with attachments
-renderEmail     :: Template -> Row -> IO Mail
-renderEmail t r = let EmacsMail m ats = renderPureEmail t r
-                  in addAttachments ats m
+renderEmail     :: Template -> Row -> IO (Text,Mail)
+renderEmail t r = let (tm, EmacsMail m ats) = renderPureEmail t r
+                  in (tm,) <$> addAttachments ats m
 
 -- | Renders an email without attachments
-renderPureEmail     :: Template -> Row -> EmacsMail
-renderPureEmail t r = case parse parseEmacsMail "template" (render t r) of
-                        Left err -> error $ show err
-                        Right m  -> m
+renderPureEmail     :: Template -> Row -> (Text,EmacsMail)
+renderPureEmail t r = let tm = render t r
+                      in case parseOnly parseEmacsMail tm of
+                           Left err -> error $ show err
+                           Right m  -> (tm,m)
 
-storeEmail       :: FilePath -> Mail -> IO ()
-storeEmail dir m = let fp = toFP dir . head . mailTo $ m
-                   in renderMail' m >>= ByteString.writeFile fp
 
-toFP         :: FilePath -> Address -> FilePath
-toFP dir adr = dir <> "/" <> f (addressEmail adr) <> ".txt"
+--------------------------------------------------------------------------------
+
+storeEmail           :: FilePath -> (Text,Mail) -> IO ()
+storeEmail dir (t,m) = let fp = toFP dir "txt" . head . mailTo $ m
+                       in Text.writeFile fp t
+
+dumpEmail       :: FilePath -> Mail -> IO ()
+dumpEmail dir m = let fp = toFP dir "mail" . head . mailTo $ m
+                  in renderMail' m >>= ByteString.writeFile fp
+
+
+-- | Construct the appropritae file path
+toFP             :: FilePath -> String -> Address -> FilePath
+toFP dir ext adr = dir <> "/" <> f (addressEmail adr) <> "." <> ext
   where
     f = Text.unpack . Text.replace " " "_" . Text.strip

@@ -2,15 +2,22 @@
 {-# LANGUAGE TupleSections #-}
 module Mail where
 
-import           Control.Arrow (second)
+import           Control.Applicative
+import           Control.Arrow (first, second)
+import           Data.Attoparsec.Combinator
+import           Data.Attoparsec.Text
+import qualified Data.Attoparsec.Text as Attoparsec
+import           Data.Char (isAlphaNum)
 import qualified Data.Map as Map
 import           Data.String (fromString)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Text.Lazy (fromStrict)
 import           Network.Mail.Mime
-import           Text.Parsec
-import           Text.Parsec.Text
+import           Text.Email.Parser
+-- import           Text.Parsec
+-- import           Text.Parsec.Text
+import qualified Data.Text.IO as Text
 
 --------------------------------------------------------------------------------
 type ContentTypeString = Text
@@ -34,13 +41,10 @@ parseEmacsMail = (\mkMail (body,ats) -> EmacsMail (mkMail body) ats)
 
 headerBodySeparator = "--text follows this line--"
 
+parseHeaders' = Map.fromList <$> (parseHeader `sepEndBy` endOfLine)
 
-
-
-
-
-parseHeaders' = Map.fromList <$> (parseHeader `sepEndBy` newline)
-
+sepEndBy            :: Parser a -> Parser b -> Parser [a]
+sepEndBy pItem pSep = pItem `sepBy` pSep <* pSep
 
 lookup'     :: (Show k, Ord k) => k -> Map.Map k v -> Parser v
 lookup' k m = case Map.lookup k m of
@@ -53,17 +57,16 @@ parseHeaders = do hdrs    <- parseHeaders'
                   to      <- toAddress =<< lookup' "to"      hdrs
                   subject <- lookup' "subject" hdrs
                   -- other headers
-                  pure $ (simpleMail' to from subject . fromStrict)
+                  pure (simpleMail' to from subject . fromStrict)
 
 parseHeader :: Parser (Text,Text)
 parseHeader = (,) <$> parseField <* char ':' <*> parseValue
 
 parseField :: Parser Text
-parseField = Text.toLower . Text.pack <$> many1 alphaNum
-
+parseField = Text.toLower <$> Attoparsec.takeWhile1 isAlphaNum
 
 parseValue :: Parser Text
-parseValue = (Text.strip . Text.pack) <$> many1 (noneOf "\n\r")
+parseValue = Text.strip <$> Attoparsec.takeWhile1 (not . isEndOfLine)
 
 
 
@@ -89,6 +92,9 @@ parseValue = (Text.strip . Text.pack) <$> many1 (noneOf "\n\r")
 type MailHeaders = Map.Map Text Text
 
 
+-- parseAddress :: Parser Address
+-- parseAddress = read . show <$> addrSpec
+
 toAddress :: Text -> Parser Address
 toAddress = pure . fromString . Text.unpack
 -- TODO: Fix this
@@ -103,34 +109,61 @@ split1 c = second (Text.drop 1) . Text.break (== c)
 --------------------------------------------------------------------------------
 
 parseBody :: Parser (Text,[Attachment])
-parseBody = (\s -> (Text.pack s,[])) <$> many anyChar
+parseBody = (\(t,ats) t' -> (t <> t', ats)) <$> parseBodyWithAttachments
+                                            <*> takeText
+                                            <*  endOfInput
+
+parseBodyWithAttachments :: Parser (Text,[Attachment])
+parseBodyWithAttachments = first Text.concat . unzip <$> many parseBodyAndAttachment
 
 
-test = parseFromFile parseEmacsMail "/home/frank/teaching/2019/geometric_algorithms/template_final_mail.txt"
+parseBodyAndAttachment  :: Parser (Text,Attachment)
+parseBodyAndAttachment = (,) <$> parseBodyText <*> parseAttachment'
+
+parseBodyText :: Parser Text
+parseBodyText = Text.pack <$> manyTill anyChar parseAttachmentStart
+
+
+
+-- test = parseOnly parseBody
+--   <$> Text.readFile "/home/frank/teaching/2019/geometric_algorithms/template_final_mail.txt"
+test = parseOnly parseBody
+  <$> Text.readFile "/tmp/body.txt"
+
+parseAttachmentStart :: Parser Text
+parseAttachmentStart = string "<#part "
 
 parseAttachment :: Parser Attachment
-parseAttachment = (,) <$  string "<#part "
-                      <*> parseType
-                      <*  space
-                      <*> parsePath
-                      <*  space
-                      <*  parseDisposition
-                      <*  string ">\n<#/part>"
+parseAttachment = parseAttachmentStart *> parseAttachment'
 
-parseKeyVal      :: String -> Parser a -> Parser (String,a)
+parseAttachment' :: Parser Attachment
+parseAttachment' = (,) <$> parseType
+                       <*  space
+                       <*> parsePath
+                       <*  space
+                       <*  parseDisposition
+                       <*  string ">\n<#/part>"
+
+parseKeyVal      :: Text -> Parser a -> Parser (Text,a)
 parseKeyVal k pv = (,) <$> string k <* char '=' <*> pv'
   where
     pv' = between (char '"') (char '"') pv <|> pv
 
+between :: Parser a -> Parser b -> Parser c -> Parser c
+between pStart pEnd pItem = pStart *> pItem <* pEnd
+
 
 parseType :: Parser ContentTypeString
-parseType = snd <$> parseKeyVal "type" (Text.pack <$> many1 (noneOf " \""))
+parseType = snd <$> parseKeyVal "type" (Attoparsec.takeWhile1 (`notElem` [' ', '"']))
+
 
 parsePath  :: Parser FilePath
-parsePath  = snd <$> parseKeyVal "filename" (many1 (noneOf "\""))
+parsePath  = Text.unpack . snd <$> parseKeyVal "filename" (Attoparsec.takeWhile1 (/= '\"'))
 
-parseDisposition :: Parser String
+parseDisposition :: Parser Text
 parseDisposition = snd <$> parseKeyVal "disposition" (string "attachment" <|> string "inline")
 
 
-test2 = parse parseAttachment "foo" "<#part type=\"application/pdf\" filename=\"/home/frank/rondetijd en.pdf\" disposition=attachment>\n<#/part>"
+-- test2 = parseOnly parseAttachment <#part type=\"application/pdf\" filename=\"/home/frank/rondetijd en.pdf\" disposition=attachment>\n<#/part>"
+
+foo = "type=\"application/octet-stream\" filename=\"/home/frank/.gitconfig\" disposition=attachment>\n<#/part>\n\nRest\n\n--\n\n- Frank\n"
