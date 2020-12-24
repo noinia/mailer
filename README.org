@@ -1,0 +1,92 @@
+#+TITLE: Mailer
+
+A tool to send emails based on a csv file and a template. The main
+goal is to send students their grades.
+
+* The Template
+
+The template should be in 'emacs mail buffer' format. It supports
+variables of the form:
+
+- $variableName, and
+- ${variableName}
+
+where variableName should be a valid haskell identifier. See the
+[[https://hackage.haskell.org/package/template][template]] package for
+details.
+
+** Example Template
+
+Here is an example of a mail template:
+
+#+BEGIN_SRC
+From: myRealEmailAddress@server.com
+To: $email
+Subject: Some Subject goes here
+--text follows this line--
+
+Dear $firstName $lastName,
+
+You scored ${hw2} points for HW2 of INFOGA. Attached you'll find your
+writeup with some comments. Below you'll find some general notes on
+some of the questions. If you have any questions about your grade (or
+about my comments) let me know!
+
+<#part type="application/octet-stream" filename="/tmp/handins/hw2/graded/${studentId}.pdf" disposition=attachment>
+<#/part>
+
+See you in class!
+
+--
+
+- Frank
+#+END_SRC
+
+** Headers
+
+Currently the supported headers are:
+
+- from,
+- to, and
+- subject.
+
+Currently, we support only one email address in the form and to
+fields, moreover we support only pure email addresses (no email
+address with a human readable name).
+
+** Attachments
+
+We can add attachments following the normal emacs attachment pattern,
+i.e. by adding:
+
+#+BEGIN_SRC
+<#part type="FILETYPE" filename="PATHTOTHEFILE" disposition=attachment>
+<#/part>
+#+END_SRC
+
+where FILETYPE and PATHTOTHEFILE indicate the file type
+(e.g. "application/pdf" and the path to the file.)
+
+* The Data file
+
+And the corresponding csv data file, in which the first line is
+supposed to contain the variable names that are used in the template
+(and possibly unused variables)
+
+#+BEGIN_SRC csv
+lastName,firstName,studentId,email,hw1,hw2,hw3
+jan,jansen,123456,jan@jansen.com,10,1,10
+#+END_SRC
+
+* Options
+
+The tool currently supports three options:
+
+- sending the emails (using msmtp),
+- storing the instantiated templates as text files, and
+- dumping the emails (in mime format) in the format we are passing it
+  to msmtp.
+
+* Installation requirements
+
+msmtp needs to be installed (and configured), and on the path.

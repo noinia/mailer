@@ -99,7 +99,7 @@ sendEmail   :: Mail -> IO ()
 sendEmail m = renderMail' m >>= sendEmail' m
 
 sendEmail'      :: Mail -> ByteString.ByteString -> IO ()
-sendEmail' m bs = do log $ "Sending email to " <> show (mailTo m)
+sendEmail' m bs = do log $ "Sending email to " <> (Text.unpack . renderAddress . head . mailTo $ m)
                      withProcessWait processCfg $ \_msmtpProc ->
                         pure ()
                      log "done"
